@@ -1,0 +1,45 @@
+package utils
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+)
+
+type Envelope map[string]interface{}
+
+func WriteJson(w http.ResponseWriter, status int, data Envelope) error {
+	js, err := json.MarshalIndent(data, "", "  ")
+
+	if err != nil {
+		http.Error(w, "Could not encode data to JSON", http.StatusInternalServerError)
+		return err
+	}
+
+	js = append(js, '\n')
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, err = w.Write(js)
+
+	return err
+}
+
+func ReadIDParam(r *http.Request) (int64, error) {
+	idParam := chi.URLParam(r, "id")
+
+	if idParam == "" {
+		return 0, errors.New("missing id parameter")
+	}
+
+	id, err := strconv.ParseInt(idParam, 10, 64)
+
+	if err != nil || id < 1 {
+		return 0, errors.New("invalid id parameter")
+	}
+
+	return id, nil
+}

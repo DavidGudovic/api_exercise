@@ -150,9 +150,41 @@ func (pg *PostgresWorkoutStore) GetWorkoutByID(id int64) (*Workout, error) {
 }
 
 func (pg *PostgresWorkoutStore) UpdateWorkout(workout *Workout) error {
+	transaction, err := pg.db.Begin()
+
+	if err != nil {
+		return err
+	}
+
+	defer func(tx *sql.Tx) {
+		_ = tx.Rollback()
+	}(transaction)
+
 	updateQuery := `UPDATE workouts SET title = $1, description = $2, duration_minutes = $3, calories_burned = $4 WHERE id = $5`
 
-	_, err := pg.db.Exec(updateQuery, workout.Title, workout.Description, workout.DurationMinutes, workout.CaloriesBurned, workout.ID)
+	result, err := pg.db.Exec(updateQuery, workout.Title, workout.Description, workout.DurationMinutes, workout.CaloriesBurned, workout.ID)
+
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	updateEntryQuery := `UPDATE workout_entries SET exercise_name = $1, sets = $2, reps = $3, duration_seconds = $4, weight = $5, notes = $6, order_index = $7 WHERE id = $8 AND workout_id = $9`
+
+	for _, entry := range workout.Entries {
+		_, err = pg.db.Exec(updateEntryQuery, entry.ExerciseName, entry.Sets, entry.Reps, entry.DurationSeconds, entry.Weight, entry.Notes, entry.OrderIndex, entry.ID, workout.ID)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	err = transaction.Commit()
 
 	if err != nil {
 		return err
