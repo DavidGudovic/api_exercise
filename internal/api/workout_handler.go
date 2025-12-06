@@ -89,6 +89,7 @@ func (wh *WorkoutHandler) HandleUpdateWorkout(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		wh.logger.Printf("ERROR: %v", err)
 		_ = utils.WriteJson(w, http.StatusInternalServerError, utils.Envelope{"error": "Failed to update workout"})
+		return
 	}
 
 	_ = utils.WriteJson(w, http.StatusOK, utils.Envelope{"workout": workout})
