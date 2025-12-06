@@ -1,6 +1,9 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"errors"
+)
 
 type Workout struct {
 	ID              int            `json:"id"`
@@ -26,6 +29,40 @@ type PostgresWorkoutStore struct {
 	db *sql.DB
 }
 
+func (pg *PostgresWorkoutStore) GetAllWorkouts() ([]*Workout, error) {
+	var workouts []*Workout
+
+	rows, err := pg.db.Query(`SELECT id, title, description, duration_minutes, calories_burned FROM workouts`)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
+
+	for rows.Next() {
+		workout := &Workout{}
+		err = rows.Scan(&workout.ID, &workout.Title, &workout.Description, &workout.DurationMinutes, &workout.CaloriesBurned)
+
+		if err != nil {
+			return nil, err
+		}
+
+		workout.Entries = []WorkoutEntry{}
+		err = pg.populateEntriesForWorkout(workout)
+
+		if err != nil {
+			return nil, err
+		}
+
+		workouts = append(workouts, workout)
+	}
+
+	return workouts, nil
+}
+
 func NewPostgresWorkoutStore(db *sql.DB) *PostgresWorkoutStore {
 	return &PostgresWorkoutStore{db: db}
 }
@@ -35,6 +72,7 @@ type WorkoutStore interface {
 	GetWorkoutByID(id int64) (*Workout, error)
 	UpdateWorkout(*Workout) error
 	DeleteWorkout(id int64) error
+	GetAllWorkouts() ([]*Workout, error)
 }
 
 func (pg *PostgresWorkoutStore) CreateWorkout(workout *Workout) (*Workout, error) {
@@ -92,7 +130,17 @@ func (pg *PostgresWorkoutStore) GetWorkoutByID(id int64) (*Workout, error) {
 		WHERE id = $1
 	`
 
-	err := pg.db.QueryRow(query, id).Scan(&workout)
+	err := pg.db.QueryRow(query, id).Scan(&workout.ID, &workout.Title, &workout.Description, &workout.DurationMinutes, &workout.CaloriesBurned)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+
+	err = pg.populateEntriesForWorkout(workout)
 
 	if err != nil {
 		return nil, err
@@ -120,6 +168,31 @@ func (pg *PostgresWorkoutStore) DeleteWorkout(id int64) error {
 
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (pg *PostgresWorkoutStore) populateEntriesForWorkout(workout *Workout) error {
+	rows, err := pg.db.Query(`SELECT id, exercise_name, sets, reps, duration_seconds, weight, notes, order_index FROM workout_entries WHERE workout_id = $1 ORDER BY order_index`, workout.ID)
+
+	if err != nil {
+		return err
+	}
+
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
+
+	for rows.Next() {
+		entry := WorkoutEntry{}
+		err = rows.Scan(&entry.ID, &entry.ExerciseName, &entry.Sets, &entry.Reps, &entry.DurationSeconds, &entry.Weight, &entry.Notes, &entry.OrderIndex)
+
+		if err != nil {
+			return err
+		}
+
+		workout.Entries = append(workout.Entries, entry)
 	}
 
 	return nil

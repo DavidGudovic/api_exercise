@@ -42,6 +42,7 @@ func (wh *WorkoutHandler) HandleGetWorkoutByID(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -56,7 +57,7 @@ func (wh *WorkoutHandler) HandleGetWorkoutByID(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// HandleCreateWorkout POST /workouts/{workoutID}
+// HandleCreateWorkout POST /workouts
 func (wh *WorkoutHandler) HandleCreateWorkout(w http.ResponseWriter, r *http.Request) {
 	var workout store.Workout
 
@@ -90,9 +91,25 @@ func (wh *WorkoutHandler) HandleCreateWorkout(w http.ResponseWriter, r *http.Req
 
 // HandleUpdateWorkout PUT /workouts/{workoutID}
 func (wh *WorkoutHandler) HandleUpdateWorkout(w http.ResponseWriter, r *http.Request) {
-	var workout store.Workout
+	paramWorkoutID := chi.URLParam(r, "workoutID")
 
-	err := json.NewDecoder(r.Body).Decode(&workout)
+	if paramWorkoutID == "" {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	workoutID, err := strconv.Atoi(paramWorkoutID)
+
+	if err != nil {
+		http.Error(w, "Invalid workout ID", http.StatusBadRequest)
+		return
+	}
+
+	workout := store.Workout{
+		ID: workoutID,
+	}
+
+	err = json.NewDecoder(r.Body).Decode(&workout)
 
 	if err != nil {
 		fmt.Println(err)
@@ -141,6 +158,28 @@ func (wh *WorkoutHandler) HandleDeleteWorkout(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, "Failed to delete workout", http.StatusInternalServerError)
+		return
+	}
+}
+
+// HandleGetAllWorkouts GET /workouts
+func (wh *WorkoutHandler) HandleGetAllWorkouts(w http.ResponseWriter, r *http.Request) {
+	workouts, err := wh.workoutStore.GetAllWorkouts()
+
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Failed to retrieve workouts", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	err = json.NewEncoder(w).Encode(workouts)
+
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
 }
