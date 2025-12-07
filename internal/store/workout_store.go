@@ -9,6 +9,7 @@ type Workout struct {
 	ID              int            `json:"id"`
 	Title           string         `json:"title"`
 	Description     string         `json:"description"`
+	UserID          int            `json:"user_id"`
 	DurationMinutes int            `json:"duration_minutes"`
 	CaloriesBurned  int            `json:"calories_burned"`
 	Entries         []WorkoutEntry `json:"entries"`
@@ -31,6 +32,7 @@ type WorkoutStore interface {
 	UpdateWorkout(*Workout) error
 	DeleteWorkout(id int) error
 	GetAllWorkouts() ([]*Workout, error)
+	GetWorkoutOwnerID(workoutID int) (int, error)
 }
 
 type PostgresWorkoutStore struct {
@@ -82,12 +84,12 @@ func (pg *PostgresWorkoutStore) CreateWorkout(workout *Workout) (*Workout, error
 	defer func() { _ = transaction.Rollback() }()
 
 	query := `
-			INSERT INTO workouts(title, description, duration_minutes, calories_burned)
-			VALUES ($1, $2, $3, $4)
+			INSERT INTO workouts(user_id, title, description, duration_minutes, calories_burned)
+			VALUES ($1, $2, $3, $4, $5)
 			RETURNING id
 		`
 
-	err = transaction.QueryRow(query, workout.Title, workout.Description, workout.DurationMinutes, workout.CaloriesBurned).Scan(&workout.ID)
+	err = transaction.QueryRow(query, workout.UserID, workout.Title, workout.Description, workout.DurationMinutes, workout.CaloriesBurned).Scan(&workout.ID)
 
 	if err != nil {
 		return nil, err
@@ -130,12 +132,12 @@ func (pg *PostgresWorkoutStore) GetWorkoutByID(id int) (*Workout, error) {
 	workout := &Workout{}
 
 	query := `
-		SELECT id, title, description, duration_minutes, calories_burned
+		SELECT id, title, description, duration_minutes, calories_burned, user_id
 		FROM workouts
 		WHERE id = $1
 	`
 
-	err := pg.db.QueryRow(query, id).Scan(&workout.ID, &workout.Title, &workout.Description, &workout.DurationMinutes, &workout.CaloriesBurned)
+	err := pg.db.QueryRow(query, id).Scan(&workout.ID, &workout.Title, &workout.Description, &workout.DurationMinutes, &workout.CaloriesBurned, &workout.UserID)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -229,4 +231,17 @@ func (pg *PostgresWorkoutStore) populateEntriesForWorkout(workout *Workout) erro
 	}
 
 	return nil
+}
+
+func (pg *PostgresWorkoutStore) GetWorkoutOwnerID(workoutID int) (int, error) {
+	query := `SELECT user_id FROM workouts WHERE id = $1`
+
+	var userID int
+	err := pg.db.QueryRow(query, workoutID).Scan(&userID)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return userID, nil
 }

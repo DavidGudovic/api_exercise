@@ -15,17 +15,16 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("failed to connect to database: %v", err)
 	}
+	_, err = db.Exec("TRUNCATE TABLE workout_entries, workouts, users RESTART IDENTITY CASCADE")
+
+	if err != nil {
+		t.Fatalf("failed to truncate tables: %v", err)
+	}
 
 	err = Migrate(db, "./../../migrations")
 
 	if err != nil {
 		t.Fatalf("failed to run migrations: %v", err)
-	}
-
-	_, err = db.Exec("TRUNCATE TABLE workout_entries, workouts RESTART IDENTITY CASCADE")
-
-	if err != nil {
-		t.Fatalf("failed to truncate tables: %v", err)
 	}
 
 	return db
@@ -50,6 +49,7 @@ func TestCreateWorkout(t *testing.T) {
 			workout: &Workout{
 				Title:           "push day",
 				Description:     "upper body day",
+				UserID:          1,
 				DurationMinutes: 60,
 				CaloriesBurned:  200,
 				Entries: []WorkoutEntry{
@@ -70,6 +70,7 @@ func TestCreateWorkout(t *testing.T) {
 			workout: &Workout{
 				Title:           "full body",
 				Description:     "complete workout",
+				UserID:          1,
 				DurationMinutes: 90,
 				CaloriesBurned:  500,
 				Entries: []WorkoutEntry{

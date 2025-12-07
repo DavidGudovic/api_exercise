@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/DavidGudovic/api_exercise/internal/middleware"
 	"github.com/DavidGudovic/api_exercise/internal/store"
 	"github.com/DavidGudovic/api_exercise/internal/utils"
 )
@@ -57,6 +58,8 @@ func (wh *WorkoutHandler) HandleCreateWorkout(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	workout.UserID = middleware.GetUser(r).ID
+
 	createdWorkout, err := wh.workoutStore.CreateWorkout(&workout)
 
 	if err != nil {
@@ -83,6 +86,8 @@ func (wh *WorkoutHandler) HandleUpdateWorkout(w http.ResponseWriter, r *http.Req
 		_ = utils.WriteJson(w, http.StatusInternalServerError, utils.Envelope{"error": "Failed to decode workout"})
 		return
 	}
+
+	workout.UserID = middleware.GetUser(r).ID
 
 	err = wh.workoutStore.UpdateWorkout(&workout)
 
