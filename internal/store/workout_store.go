@@ -25,8 +25,20 @@ type WorkoutEntry struct {
 	OrderIndex      int      `json:"order_index"`
 }
 
+type WorkoutStore interface {
+	CreateWorkout(*Workout) (*Workout, error)
+	GetWorkoutByID(id int) (*Workout, error)
+	UpdateWorkout(*Workout) error
+	DeleteWorkout(id int) error
+	GetAllWorkouts() ([]*Workout, error)
+}
+
 type PostgresWorkoutStore struct {
 	db *sql.DB
+}
+
+func NewPostgresWorkoutStore(db *sql.DB) *PostgresWorkoutStore {
+	return &PostgresWorkoutStore{db: db}
 }
 
 func (pg *PostgresWorkoutStore) GetAllWorkouts() ([]*Workout, error) {
@@ -38,9 +50,7 @@ func (pg *PostgresWorkoutStore) GetAllWorkouts() ([]*Workout, error) {
 		return nil, err
 	}
 
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		workout := &Workout{}
@@ -50,7 +60,6 @@ func (pg *PostgresWorkoutStore) GetAllWorkouts() ([]*Workout, error) {
 			return nil, err
 		}
 
-		workout.Entries = []WorkoutEntry{}
 		err = pg.populateEntriesForWorkout(workout)
 
 		if err != nil {
@@ -63,18 +72,6 @@ func (pg *PostgresWorkoutStore) GetAllWorkouts() ([]*Workout, error) {
 	return workouts, nil
 }
 
-func NewPostgresWorkoutStore(db *sql.DB) *PostgresWorkoutStore {
-	return &PostgresWorkoutStore{db: db}
-}
-
-type WorkoutStore interface {
-	CreateWorkout(*Workout) (*Workout, error)
-	GetWorkoutByID(id int64) (*Workout, error)
-	UpdateWorkout(*Workout) error
-	DeleteWorkout(id int64) error
-	GetAllWorkouts() ([]*Workout, error)
-}
-
 func (pg *PostgresWorkoutStore) CreateWorkout(workout *Workout) (*Workout, error) {
 	transaction, err := pg.db.Begin()
 
@@ -82,9 +79,7 @@ func (pg *PostgresWorkoutStore) CreateWorkout(workout *Workout) (*Workout, error
 		return nil, err
 	}
 
-	defer func(tx *sql.Tx) {
-		_ = tx.Rollback()
-	}(transaction)
+	defer func() { _ = transaction.Rollback() }()
 
 	query := `
 			INSERT INTO workouts(title, description, duration_minutes, calories_burned)
@@ -98,14 +93,24 @@ func (pg *PostgresWorkoutStore) CreateWorkout(workout *Workout) (*Workout, error
 		return nil, err
 	}
 
-	for _, entry := range workout.Entries {
+	for index := range workout.Entries {
 		entryQuery := `
 				INSERT INTO workout_entries(workout_id, exercise_name, sets, reps, duration_seconds, weight, notes, order_index)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 				RETURNING id
 			`
 
-		err = transaction.QueryRow(entryQuery, workout.ID, entry.ExerciseName, entry.Sets, entry.Reps, entry.DurationSeconds, entry.Weight, entry.Notes, entry.OrderIndex).Scan(&entry.ID)
+		err = transaction.QueryRow(
+			entryQuery,
+			workout.ID,
+			workout.Entries[index].ExerciseName,
+			workout.Entries[index].Sets,
+			workout.Entries[index].Reps,
+			workout.Entries[index].DurationSeconds,
+			workout.Entries[index].Weight,
+			workout.Entries[index].Notes,
+			workout.Entries[index].OrderIndex,
+		).Scan(&workout.Entries[index].ID)
 
 		if err != nil {
 			return nil, err
@@ -121,7 +126,7 @@ func (pg *PostgresWorkoutStore) CreateWorkout(workout *Workout) (*Workout, error
 	return workout, nil
 }
 
-func (pg *PostgresWorkoutStore) GetWorkoutByID(id int64) (*Workout, error) {
+func (pg *PostgresWorkoutStore) GetWorkoutByID(id int) (*Workout, error) {
 	workout := &Workout{}
 
 	query := `
@@ -132,12 +137,12 @@ func (pg *PostgresWorkoutStore) GetWorkoutByID(id int64) (*Workout, error) {
 
 	err := pg.db.QueryRow(query, id).Scan(&workout.ID, &workout.Title, &workout.Description, &workout.DurationMinutes, &workout.CaloriesBurned)
 
-	if err != nil {
-		return nil, err
-	}
-
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	err = pg.populateEntriesForWorkout(workout)
@@ -156,13 +161,11 @@ func (pg *PostgresWorkoutStore) UpdateWorkout(workout *Workout) error {
 		return err
 	}
 
-	defer func(tx *sql.Tx) {
-		_ = tx.Rollback()
-	}(transaction)
+	defer func() { _ = transaction.Rollback() }()
 
 	updateQuery := `UPDATE workouts SET title = $1, description = $2, duration_minutes = $3, calories_burned = $4 WHERE id = $5`
 
-	result, err := pg.db.Exec(updateQuery, workout.Title, workout.Description, workout.DurationMinutes, workout.CaloriesBurned, workout.ID)
+	result, err := transaction.Exec(updateQuery, workout.Title, workout.Description, workout.DurationMinutes, workout.CaloriesBurned, workout.ID)
 
 	if err != nil {
 		return err
@@ -177,7 +180,7 @@ func (pg *PostgresWorkoutStore) UpdateWorkout(workout *Workout) error {
 	updateEntryQuery := `UPDATE workout_entries SET exercise_name = $1, sets = $2, reps = $3, duration_seconds = $4, weight = $5, notes = $6, order_index = $7 WHERE id = $8 AND workout_id = $9`
 
 	for _, entry := range workout.Entries {
-		_, err = pg.db.Exec(updateEntryQuery, entry.ExerciseName, entry.Sets, entry.Reps, entry.DurationSeconds, entry.Weight, entry.Notes, entry.OrderIndex, entry.ID, workout.ID)
+		_, err = transaction.Exec(updateEntryQuery, entry.ExerciseName, entry.Sets, entry.Reps, entry.DurationSeconds, entry.Weight, entry.Notes, entry.OrderIndex, entry.ID, workout.ID)
 
 		if err != nil {
 			return err
@@ -193,7 +196,7 @@ func (pg *PostgresWorkoutStore) UpdateWorkout(workout *Workout) error {
 	return nil
 }
 
-func (pg *PostgresWorkoutStore) DeleteWorkout(id int64) error {
+func (pg *PostgresWorkoutStore) DeleteWorkout(id int) error {
 	deleteQuery := `DELETE FROM workouts WHERE id = $1`
 
 	_, err := pg.db.Exec(deleteQuery, id)
@@ -212,9 +215,7 @@ func (pg *PostgresWorkoutStore) populateEntriesForWorkout(workout *Workout) erro
 		return err
 	}
 
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		entry := WorkoutEntry{}
