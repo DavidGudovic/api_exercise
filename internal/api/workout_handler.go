@@ -73,7 +73,7 @@ func (wh *WorkoutHandler) HandleUpdateWorkout(w http.ResponseWriter, r *http.Req
 	workoutID, err := utils.ReadIDParam(r)
 
 	workout := store.Workout{
-		ID: int(workoutID),
+		ID: workoutID,
 	}
 
 	err = json.NewDecoder(r.Body).Decode(&workout)
