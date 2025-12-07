@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
 	"net/http"
@@ -24,9 +23,7 @@ func main() {
 
 	r := routes.SetupRoutes(application)
 
-	defer func(DB *sql.DB) {
-		_ = DB.Close()
-	}(application.DB)
+	defer func() { _ = application.DB.Close() }()
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
